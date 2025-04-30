@@ -1,0 +1,71 @@
+services:
+  issara_db_server:
+    image: mysql:8.0
+    container_name: issara_db_server
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - issara_db_server_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+    ports:
+      - "3308:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  issara_redis_server:
+    image: redis:latest
+    container_name: issara_redis_server
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - issara_redis_server_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  issara_api_server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: issara_api_server
+    container_name: issara_api_server
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./src/.:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - issara_db_server
+      - issara_redis_server
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  issara_celery_worker:
+    build: .
+    command: celery -A config worker -l INFO
+    volumes:
+      - ./src/.:/app
+    depends_on:
+      - issara_redis_server
+      - issara_api_server
+
+volumes:
+  issara_db_server_data:
+  issara_redis_server_data:
+
+networks:
+  default:
+    name: issara_network
+    external: true
